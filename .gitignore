@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Secrets
+.env
+
+# Build output (React or other)
+build/
+
+# Logs
+*.log
+
+# DB settings (optional)
+*.sqlite
+
+# Misc
+.DS_Store
