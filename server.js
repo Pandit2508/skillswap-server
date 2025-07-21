@@ -6,8 +6,9 @@ import './config/passport.js';
 import passport  from "passport";
 import authRoutes from "./routes/authRoutes.js";
 import cookieParser from "cookie-parser";
-
-
+import userRoutes from "./routes/userRoutes.js";
+import matchRoutes from "./routes/matchRoutes.js";
+import profileRoutes from "./routes/profileRoutes.js";
 
 dotenv.config();
 const app = express();
@@ -30,7 +31,10 @@ app.use(passport.session());
 
 // Routes
 app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/match-requests", matchRoutes);
 
+app.use("/api/profile", profileRoutes);
 
 
 app.listen(5000, () => console.log("Server running on http://localhost:5000"));
