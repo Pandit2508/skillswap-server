@@ -1,40 +1,43 @@
 import express from "express";
-import session from "express-session";
 import dotenv from "dotenv";
 import cors from "cors";
-import './config/passport.js';
-import passport  from "passport";
-import authRoutes from "./routes/authRoutes.js";
 import cookieParser from "cookie-parser";
+import passport from "passport";
+
+import "./config/passport.js";
+import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import matchRoutes from "./routes/matchRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 
 dotenv.config();
+
 const app = express();
-app.use(cookieParser());
 
-app.use(cors({ origin: "http://localhost:3000", credentials: true }));
-app.use(express.json());
-
-// Add session middleware for passport
+/* ================= CORS ================= */
 app.use(
-  session({
-    secret: "random secret", // not used for JWT, just required by passport
-    resave: false,
-    saveUninitialized: false,
+  cors({
+    origin: "http://localhost:3000", // frontend
+    credentials: true,               // allow cookies
   })
 );
 
-app.use(passport.initialize());
-app.use(passport.session());
+/* ================= MIDDLEWARE ================= */
+app.use(cookieParser());
+app.use(express.json());
 
-// Routes
+/* ================= PASSPORT ================= */
+// ❌ NO express-session (JWT-based auth)
+app.use(passport.initialize());
+
+/* ================= ROUTES ================= */
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/match-requests", matchRoutes);
-
 app.use("/api/profile", profileRoutes);
 
-
-app.listen(5000, () => console.log("Server running on http://localhost:5000"));
+/* ================= SERVER ================= */
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`✅ Server running on http://localhost:${PORT}`);
+});
