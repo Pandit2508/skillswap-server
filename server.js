@@ -9,6 +9,8 @@ import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import matchRoutes from "./routes/matchRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
+import bookingRoutes from "./routes/bookingRoutes.js";
+
 
 dotenv.config();
 
@@ -41,3 +43,6 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+app.use("/api/bookings", bookingRoutes);
+
+app.disable("etag");

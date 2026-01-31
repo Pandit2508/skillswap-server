@@ -25,6 +25,7 @@ router.post("/reset-password/:token", resetPassword);
 /* =========================================================
    AUTH CHECK
 ========================================================= */
+
 router.get("/me", protect, (req, res) => {
   res.status(200).json({
     success: true,
@@ -60,30 +61,35 @@ router.get(
     session: false,
   }),
   (req, res) => {
+    console.log("✅ GOOGLE CALLBACK HIT");
+    console.log("USER FROM GOOGLE:", req.user);
+
     try {
-      const user = req.user;
+      const isProd = process.env.NODE_ENV === "production";
 
       const token = jwt.sign(
-        { id: user._id },
+        { id: req.user.id },
         process.env.JWT_SECRET,
-        {
-          expiresIn: process.env.JWT_EXPIRES_IN || "3d",
-        }
+        { expiresIn: process.env.JWT_EXPIRES_IN || "2d" }
       );
 
-      // ✅ FINAL CORRECT COOKIE CONFIG
+      // 🔥 PREVENT REDIRECT CACHING
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("Pragma", "no-cache");
+
+      // ✅ CORRECT COOKIE CONFIG (THIS FIXES EVERYTHING)
       res.cookie("token", token, {
         httpOnly: true,
-        sameSite: "None",   // required for cross-origin
-        secure: false,      // localhost only
-        path: "/",          // 🔥 IMPORTANT
-        maxAge: 3 * 24 * 60 * 60 * 1000,
+        sameSite: isProd ? "None" : "Lax", // 🔥 KEY FIX
+        secure: isProd,                   // 🔥 KEY FIX
+        path: "/",
+        maxAge: 2 * 24 * 60 * 60 * 1000,
       });
 
-      res.redirect("http://localhost:3000/google-redirect");
+      return res.redirect("http://localhost:3000/google-redirect");
     } catch (err) {
       console.error("Google OAuth error:", err);
-      res.redirect("http://localhost:3000/login");
+      return res.redirect("http://localhost:3000/login");
     }
   }
 );

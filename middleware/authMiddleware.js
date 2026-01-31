@@ -1,46 +1,55 @@
 import jwt from "jsonwebtoken";
+import pool from "../config/db.js";
 
-/**
- * Middleware to protect routes that require authentication.
- * Supports JWT from cookies or Authorization header.
- */
-export const protect = (req, res, next) => {
+export const protect = async (req, res, next) => {
   try {
-    let token = null;
+    const token = req.cookies?.token;
 
-    // 🔹 Get token from cookie
-    if (req.cookies?.token) {
-      token = req.cookies.token;
-    }
-
-    // 🔹 OR from Authorization header
-    else if (
-      req.headers.authorization &&
-      req.headers.authorization.startsWith("Bearer ")
-    ) {
-      token = req.headers.authorization.split(" ")[1];
-    }
-
+    // 🔴 No token at all
     if (!token) {
-      return res
-        .status(401)
-        .json({ error: "Unauthorized: No token provided" });
+      return res.status(401).json({ message: "Not authenticated" });
     }
 
-    // 🔹 Verify JWT
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    let decoded;
 
-    // 🔹 Attach user info to request
-    req.user = {
-      id: decoded.id,       // ✅ matches all your routes
-      email: decoded.email // optional, safe
-    };
+    // 🔐 Verify JWT
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      // 🔥 Token expired / invalid → clear cookie
+      res.clearCookie("token", {
+        httpOnly: true,
+        sameSite: "None",
+        secure: false, // true in production (HTTPS)
+        path: "/",
+      });
 
-    return next();
+      return res.status(401).json({
+        message: "Session expired. Please login again.",
+      });
+    }
+
+    // 🔴 Token verified but no user id (extra safety)
+    if (!decoded?.id) {
+      return res.status(401).json({ message: "Invalid token payload" });
+    }
+
+    // 👤 Fetch user (same shape for normal + Google login)
+    const userRes = await pool.query(
+      "SELECT id, name, email FROM users WHERE id = $1",
+      [decoded.id]
+    );
+
+    if (userRes.rows.length === 0) {
+      return res.status(401).json({ message: "User no longer exists" });
+    }
+
+    // ✅ Attach clean user to request
+    req.user = userRes.rows[0];
+
+    next();
   } catch (err) {
-    console.error("JWT verification error:", err.message);
-    return res
-      .status(401)
-      .json({ error: "Unauthorized: Invalid or expired token" });
+    console.error("Auth middleware error:", err);
+    return res.status(401).json({ message: "Authentication failed" });
   }
 };

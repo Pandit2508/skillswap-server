@@ -1,8 +1,58 @@
 import pool from "../config/db.js";
 
 /* ======================================================
+   HELPER: FIND COMMON SLOT
+====================================================== */
+const findCommonSlot = (senderSlots, receiverSlots) => {
+  for (let s of senderSlots) {
+    for (let r of receiverSlots) {
+      const senderDay = s.day.toLowerCase().trim();
+      const receiverDay = r.day.toLowerCase().trim();
+
+      if (senderDay === receiverDay) {
+        const start = s.start_time > r.start_time ? s.start_time : r.start_time;
+        const end = s.end_time < r.end_time ? s.end_time : r.end_time;
+
+        if (start < end) {
+          return {
+            day: senderDay,
+            start_time: start,
+            end_time: end
+          };
+        }
+      }
+    }
+  }
+  return null;
+};
+
+/* ======================================================
+   HELPER: CONVERT DAY + TIME → REAL TIMESTAMP
+====================================================== */
+const getNextDateTime = (dayName, time) => {
+  const days = [
+    "sunday","monday","tuesday","wednesday",
+    "thursday","friday","saturday"
+  ];
+
+  const today = new Date();
+  const targetDay = days.indexOf(dayName.toLowerCase());
+  const currentDay = today.getDay();
+
+  let diff = targetDay - currentDay;
+  if (diff <= 0) diff += 7;
+
+  const nextDate = new Date(today);
+  nextDate.setDate(today.getDate() + diff);
+
+  const [hours, minutes, seconds] = time.split(":");
+  nextDate.setHours(hours, minutes, seconds || 0, 0);
+
+  return nextDate;
+};
+
+/* ======================================================
    SEND MATCH REQUEST
-   POST /api/match-requests/:receiverId
 ====================================================== */
 export const sendMatchRequest = async (req, res) => {
   const senderId = req.user.id;
@@ -13,12 +63,10 @@ export const sendMatchRequest = async (req, res) => {
   }
 
   try {
-    // Prevent duplicate requests
+    /* ---------- CHECK DUPLICATE ---------- */
     const existing = await pool.query(
-      `
-      SELECT id FROM match_requests
-      WHERE sender_id = $1 AND receiver_id = $2
-      `,
+      `SELECT id FROM match_requests
+       WHERE sender_id = $1 AND receiver_id = $2 AND status = 'pending'`,
       [senderId, receiverId]
     );
 
@@ -26,11 +74,32 @@ export const sendMatchRequest = async (req, res) => {
       return res.status(400).json({ error: "Request already sent" });
     }
 
+    /* ---------- FETCH AVAILABILITY ---------- */
+    const senderAvailability = await pool.query(
+      `SELECT day, start_time, end_time FROM availability WHERE user_id = $1`,
+      [senderId]
+    );
+
+    const receiverAvailability = await pool.query(
+      `SELECT day, start_time, end_time FROM availability WHERE user_id = $1`,
+      [receiverId]
+    );
+
+    const commonSlot = findCommonSlot(
+      senderAvailability.rows,
+      receiverAvailability.rows
+    );
+
+    if (!commonSlot) {
+      return res.status(400).json({
+        error: "No overlapping time slot found"
+      });
+    }
+
+    /* ---------- CREATE REQUEST ---------- */
     await pool.query(
-      `
-      INSERT INTO match_requests (sender_id, receiver_id)
-      VALUES ($1, $2)
-      `,
+      `INSERT INTO match_requests (sender_id, receiver_id, status)
+       VALUES ($1, $2, 'pending')`,
       [senderId, receiverId]
     );
 
@@ -38,6 +107,7 @@ export const sendMatchRequest = async (req, res) => {
       success: true,
       message: "Match request sent",
     });
+
   } catch (err) {
     console.error("Send request error:", err);
     res.status(500).json({ error: "Failed to send match request" });
@@ -46,63 +116,29 @@ export const sendMatchRequest = async (req, res) => {
 
 /* ======================================================
    GET INCOMING MATCH REQUESTS
-   GET /api/match-requests/incoming
 ====================================================== */
 export const getIncomingRequests = async (req, res) => {
   const userId = req.user.id;
 
   try {
     const requestsRes = await pool.query(
-      `
-      SELECT
-        mr.id AS request_id,
-        mr.created_at,
-        u.id AS sender_id,
-        u.name,
-        u.bio,
-        u.location,
-        u.experience,
-        u.avatar_url
-      FROM match_requests mr
-      JOIN users u ON u.id = mr.sender_id
-      WHERE mr.receiver_id = $1
-      ORDER BY mr.created_at DESC
-      `,
+      `SELECT mr.id AS request_id, mr.created_at,
+              u.id AS sender_id, u.name, u.bio,
+              u.location, u.experience, u.avatar_url
+       FROM match_requests mr
+       JOIN users u ON u.id = mr.sender_id
+       WHERE mr.receiver_id = $1
+         AND mr.status = 'pending'
+       ORDER BY mr.created_at DESC`,
       [userId]
     );
 
     const requests = [];
 
     for (const row of requestsRes.rows) {
-      /* ---------- OFFERED SKILLS ---------- */
-      const offeredSkills = await pool.query(
-        `
-        SELECT s.name
-        FROM skill_offers so
-        JOIN skills s ON s.id = so.offered_skill
-        WHERE so.user_id = $1
-        `,
-        [row.sender_id]
-      );
-
-      /* ---------- WANTED SKILLS ---------- */
-      const wantedSkills = await pool.query(
-        `
-        SELECT s.name
-        FROM user_skills us
-        JOIN skills s ON s.id = us.skill_id
-        WHERE us.user_id = $1
-        `,
-        [row.sender_id]
-      );
-
-      /* ---------- AVAILABILITY ---------- */
       const availability = await pool.query(
-        `
-        SELECT day, start_time, end_time
-        FROM availability
-        WHERE user_id = $1
-        `,
+        `SELECT day, start_time, end_time
+         FROM availability WHERE user_id = $1`,
         [row.sender_id]
       );
 
@@ -116,8 +152,6 @@ export const getIncomingRequests = async (req, res) => {
           location: row.location || "",
           experience: row.experience || "",
           avatar_url: row.avatar_url || null,
-          skills: offeredSkills.rows.map(r => r.name),
-          skills_wanted: wantedSkills.rows.map(r => r.name),
           availability: availability.rows,
         },
       });
@@ -131,23 +165,72 @@ export const getIncomingRequests = async (req, res) => {
 };
 
 /* ======================================================
-   ACCEPT MATCH REQUEST
-   POST /api/match-requests/:id/accept
+   ACCEPT MATCH REQUEST + BOOK MEETING
 ====================================================== */
 export const acceptRequest = async (req, res) => {
   const userId = req.user.id;
   const { id } = req.params;
 
   try {
-    await pool.query(
-      `
-      DELETE FROM match_requests
-      WHERE id = $1 AND receiver_id = $2
-      `,
+    const requestRes = await pool.query(
+      `SELECT * FROM match_requests
+       WHERE id = $1 AND receiver_id = $2`,
       [id, userId]
     );
 
-    res.status(200).json({ success: true, message: "Request accepted" });
+    if (!requestRes.rows.length) {
+      return res.status(404).json({ error: "Request not found" });
+    }
+
+    const request = requestRes.rows[0];
+
+    const senderAvailability = await pool.query(
+      `SELECT day, start_time, end_time FROM availability WHERE user_id = $1`,
+      [request.sender_id]
+    );
+
+    const receiverAvailability = await pool.query(
+      `SELECT day, start_time, end_time FROM availability WHERE user_id = $1`,
+      [request.receiver_id]
+    );
+
+    const commonSlot = findCommonSlot(
+      senderAvailability.rows,
+      receiverAvailability.rows
+    );
+
+    if (!commonSlot) {
+      return res.status(400).json({
+        error: "No overlapping time slot found"
+      });
+    }
+
+    const sessionTime = getNextDateTime(
+      commonSlot.day,
+      commonSlot.start_time
+    );
+
+    const meetingLink = `https://meet.jit.si/skillswap-${id}-${Date.now()}`;
+
+    await pool.query(
+      `INSERT INTO bookings
+       (sender_id, receiver_id, meeting_link, session_time)
+       VALUES ($1, $2, $3, $4)`,
+      [request.sender_id, request.receiver_id, meetingLink, sessionTime]
+    );
+
+    await pool.query(
+      `UPDATE match_requests SET status = 'accepted'
+       WHERE id = $1`,
+      [id]
+    );
+
+    res.status(200).json({
+      success: true,
+      meetingLink,
+      slot: commonSlot
+    });
+
   } catch (err) {
     console.error("Accept request error:", err);
     res.status(500).json({ error: "Failed to accept request" });
@@ -156,22 +239,28 @@ export const acceptRequest = async (req, res) => {
 
 /* ======================================================
    REJECT MATCH REQUEST
-   POST /api/match-requests/:id/reject
 ====================================================== */
 export const rejectRequest = async (req, res) => {
   const userId = req.user.id;
   const { id } = req.params;
 
   try {
-    await pool.query(
-      `
-      DELETE FROM match_requests
-      WHERE id = $1 AND receiver_id = $2
-      `,
+    const result = await pool.query(
+      `UPDATE match_requests
+       SET status = 'rejected'
+       WHERE id = $1 AND receiver_id = $2`,
       [id, userId]
     );
 
-    res.status(200).json({ success: true, message: "Request rejected" });
+    if (!result.rowCount) {
+      return res.status(404).json({ error: "Request not found" });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Request rejected"
+    });
+
   } catch (err) {
     console.error("Reject request error:", err);
     res.status(500).json({ error: "Failed to reject request" });
