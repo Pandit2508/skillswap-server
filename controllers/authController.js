@@ -8,11 +8,13 @@ const generateToken = (userId, expiresIn = process.env.JWT_EXPIRES_IN || "3d") =
   return jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn });
 };
 
+const isProduction = process.env.NODE_ENV === "production";
+
 const cookieOptions = {
   httpOnly: true,
-  sameSite: "None",   // 🔥 REQUIRED for cross-origin (3000 ↔ 5000)
-  secure: false,      // 🔥 false ONLY for localhost
-  maxAge: 3 * 24 * 60 * 60 * 1000, // 3 days
+  sameSite: isProduction ? "None" : "Lax",
+  secure: isProduction, // ✅ true on Render
+  maxAge: 3 * 24 * 60 * 60 * 1000,
 };
 
 /* ================= SIGNUP ================= */
@@ -96,9 +98,10 @@ export const login = async (req, res) => {
 /* ================= LOGOUT ================= */
 export const logout = (req, res) => {
   res.clearCookie("token", {
-    ...cookieOptions,
-    maxAge: 0,
-  });
+  httpOnly: true,
+  sameSite: isProduction ? "None" : "Lax",
+  secure: isProduction,
+});
 
   res.status(200).json({ message: "Logged out successfully" });
 };
@@ -120,7 +123,7 @@ export const forgotPassword = async (req, res) => {
     const user = userRes.rows[0];
     const token = generateToken(user.id, "15m");
 
-    const resetLink = `http://localhost:3000/reset-password/${token}`;
+    const resetLink = `${process.env.CLIENT_URL}/reset-password/${token}`;
 
     await transporter.sendMail({
       from: `"SkillSwap Support" <${process.env.EMAIL_USER}>`,
