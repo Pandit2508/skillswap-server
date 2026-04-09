@@ -11,7 +11,6 @@ import matchRoutes from "./routes/matchRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 
-
 dotenv.config();
 
 const app = express();
@@ -40,7 +39,6 @@ app.use(cookieParser());
 app.use(express.json());
 
 /* ================= PASSPORT ================= */
-//  NO express-session (JWT-based auth)
 app.use(passport.initialize());
 
 /* ================= ROUTES ================= */
@@ -48,12 +46,19 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/match-requests", matchRoutes);
 app.use("/api/profile", profileRoutes);
+app.use("/api/bookings", bookingRoutes); // ✅ moved BEFORE listen
+
+/* ================= TEST ROUTE ================= */
+app.get("/", (req, res) => {
+  res.send("Backend running 🚀");
+});
 
 /* ================= SERVER ================= */
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(` Server running on http://localhost:${PORT}`);
-});
-app.use("/api/bookings", bookingRoutes);
 
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+/* ================= SETTINGS ================= */
 app.disable("etag");
