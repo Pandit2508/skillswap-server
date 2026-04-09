@@ -22,25 +22,29 @@ const allowedOrigins = [
   "https://skillswap-client-yr53.vercel.app",
 ];
 
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true);
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
 
-      // allow all vercel previews (IMPORTANT)
-      if (
-        allowedOrigins.includes(origin) ||
-        origin.includes("vercel.app")
-      ) {
-        return callback(null, origin);
-      }
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.includes("vercel.app")
+    ) {
+      return callback(null, origin); // ✅ IMPORTANT
+    }
 
-      console.log("❌ Blocked by CORS:", origin);
-      return callback(new Error("Not allowed by CORS"));
-    },
-    credentials: true,
-  })
-);
+    console.log("❌ Blocked by CORS:", origin);
+    return callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+app.use(cors(corsOptions));
+
+/* 🔥 HANDLE PREFLIGHT (THIS WAS MISSING) */
+app.options("*", cors(corsOptions));
 
 /* ================= MIDDLEWARE ================= */
 app.use(cookieParser());
@@ -54,7 +58,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/match-requests", matchRoutes);
 app.use("/api/profile", profileRoutes);
-app.use("/api/bookings", bookingRoutes); // ✅ moved BEFORE listen
+app.use("/api/bookings", bookingRoutes);
 
 /* ================= TEST ROUTE ================= */
 app.get("/", (req, res) => {
