@@ -41,7 +41,7 @@ app.use(
 );
 
 // 🔥 Handle preflight requests properly
-app.options("*", cors());
+app.options("/*", cors());
 /* ================= MIDDLEWARE ================= */
 app.use(cookieParser());
 app.use(express.json());
