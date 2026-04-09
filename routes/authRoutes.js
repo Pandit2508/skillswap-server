@@ -1,3 +1,56 @@
+import express from "express";
+import passport from "passport";
+import jwt from "jsonwebtoken";
+import {
+  signup,
+  login,
+  forgotPassword,
+  resetPassword,
+  logout,
+} from "../controllers/authController.js";
+import { protect } from "../middleware/authMiddleware.js";
+
+const router = express.Router();
+
+/* =========================================================
+   REGULAR AUTH
+========================================================= */
+
+router.post("/signup", signup);
+router.post("/login", login);
+router.post("/logout", logout);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password/:token", resetPassword);
+
+/* =========================================================
+   AUTH CHECK
+========================================================= */
+
+router.get("/me", protect, (req, res) => {
+  res.status(200).json({
+    success: true,
+    user: req.user,
+  });
+});
+
+/* =========================================================
+   GOOGLE OAUTH
+========================================================= */
+
+/**
+ * STEP 1: Redirect user to Google
+ */
+router.get(
+  "/google",
+  passport.authenticate("google", {
+    scope: ["profile", "email"],
+    session: false,
+  })
+);
+
+/**
+ * STEP 2: Google callback
+ */
 router.get(
   "/google/callback",
   passport.authenticate("google", {
@@ -17,11 +70,11 @@ router.get(
         { expiresIn: process.env.JWT_EXPIRES_IN || "2d" }
       );
 
-      // prevent caching
+      // prevent caching issues
       res.setHeader("Cache-Control", "no-store");
       res.setHeader("Pragma", "no-cache");
 
-      // cookie config
+      // ✅ COOKIE CONFIG (CRITICAL)
       res.cookie("token", token, {
         httpOnly: true,
         sameSite: isProd ? "None" : "Lax",
@@ -30,7 +83,7 @@ router.get(
         maxAge: 2 * 24 * 60 * 60 * 1000,
       });
 
-      // ✅ redirect to frontend (PRODUCTION SAFE)
+      // ✅ REDIRECT TO FRONTEND
       return res.redirect(`${process.env.CLIENT_URL}/google-redirect`);
     } catch (err) {
       console.error("Google OAuth error:", err);
@@ -38,3 +91,5 @@ router.get(
     }
   }
 );
+
+export default router;
