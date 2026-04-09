@@ -58,35 +58,33 @@ router.get(
     session: false,
   }),
   (req, res) => {
-    console.log("✅ GOOGLE CALLBACK HIT");
-    console.log("USER FROM GOOGLE:", req.user);
+    console.log("🔥 GOOGLE CALLBACK HIT");
+    console.log("USER:", req.user);
 
     try {
+      if (!req.user) {
+        console.log("❌ No user from Google");
+        return res.redirect(`${process.env.CLIENT_URL}/login`);
+      }
+
       const isProd = process.env.NODE_ENV === "production";
 
       const token = jwt.sign(
         { id: req.user.id },
         process.env.JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRES_IN || "2d" }
+        { expiresIn: "2d" }
       );
 
-      // prevent caching issues
-      res.setHeader("Cache-Control", "no-store");
-      res.setHeader("Pragma", "no-cache");
-
-      // ✅ COOKIE CONFIG (CRITICAL)
       res.cookie("token", token, {
         httpOnly: true,
         sameSite: isProd ? "None" : "Lax",
         secure: isProd,
         path: "/",
-        maxAge: 2 * 24 * 60 * 60 * 1000,
       });
 
-      // ✅ REDIRECT TO FRONTEND
       return res.redirect(`${process.env.CLIENT_URL}/google-redirect`);
     } catch (err) {
-      console.error("Google OAuth error:", err);
+      console.error("💥 Google OAuth ERROR FULL:", err);
       return res.redirect(`${process.env.CLIENT_URL}/login`);
     }
   }
