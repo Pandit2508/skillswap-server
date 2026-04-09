@@ -17,10 +17,21 @@ dotenv.config();
 const app = express();
 
 /* ================= CORS ================= */
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://skillswap-client-yv4s.vercel.app"
+];
+
 app.use(
   cors({
-    origin: "http://localhost:3000", // frontend
-    credentials: true,               // allow cookies
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("CORS not allowed"));
+      }
+    },
+    credentials: true,
   })
 );
 
@@ -29,7 +40,7 @@ app.use(cookieParser());
 app.use(express.json());
 
 /* ================= PASSPORT ================= */
-// ❌ NO express-session (JWT-based auth)
+//  NO express-session (JWT-based auth)
 app.use(passport.initialize());
 
 /* ================= ROUTES ================= */
@@ -41,7 +52,7 @@ app.use("/api/profile", profileRoutes);
 /* ================= SERVER ================= */
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(` Server running on http://localhost:${PORT}`);
 });
 app.use("/api/bookings", bookingRoutes);
 
