@@ -19,19 +19,19 @@ const app = express();
 const allowedOrigins = [
   "http://localhost:3000",
   "https://skillswap-client-yv4s.vercel.app",
+  "https://skillswap-client-yr53.vercel.app", // 👈 your CURRENT deployed frontend
 ];
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      // allow requests with no origin (like Postman, mobile apps)
-      if (!origin) return callback(null, true);
+      if (!origin) return callback(null, true); // Postman etc.
 
       if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
+        return callback(null, origin); // ✅ MUST return origin, not true
       } else {
-        console.log("Blocked by CORS:", origin);
-        return callback(null, false); // 🔥 DON'T throw error
+        console.log("❌ Blocked by CORS:", origin);
+        return callback(new Error("Not allowed by CORS")); // ✅ proper rejection
       }
     },
     credentials: true,
