@@ -43,8 +43,6 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-/* 🔥 HANDLE PREFLIGHT (THIS WAS MISSING) */
-app.options("*", cors(corsOptions));
 
 /* ================= MIDDLEWARE ================= */
 app.use(cookieParser());
