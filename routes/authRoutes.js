@@ -57,9 +57,9 @@ router.get(
 router.get(
   "/google/callback",
   passport.authenticate("google", {
-    failureRedirect: "http://localhost:3000/login",
-    session: false,
-  }),
+  failureRedirect: `${process.env.CLIENT_URL}/login`,
+  session: false,
+}),
   (req, res) => {
     console.log("✅ GOOGLE CALLBACK HIT");
     console.log("USER FROM GOOGLE:", req.user);

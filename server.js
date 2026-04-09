@@ -18,22 +18,30 @@ const app = express();
 /* ================= CORS ================= */
 const allowedOrigins = [
   "http://localhost:3000",
-  "https://skillswap-client-yv4s.vercel.app"
+  "https://skillswap-client-yv4s.vercel.app",
 ];
 
 app.use(
   cors({
     origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
+      // allow requests with no origin (like Postman, mobile apps)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
       } else {
-        callback(new Error("CORS not allowed"));
+        console.log("Blocked by CORS:", origin);
+        return callback(null, false); // 🔥 DON'T throw error
       }
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
+// 🔥 Handle preflight requests properly
+app.options("*", cors());
 /* ================= MIDDLEWARE ================= */
 app.use(cookieParser());
 app.use(express.json());
