@@ -3,38 +3,53 @@ import pool from "../config/db.js";
 
 export const protect = async (req, res, next) => {
   try {
-    const token = req.cookies?.token;
+    let token;
 
-    // 🔴 No token at all
+    // 🔥 1. Check Authorization header (PRIMARY)
+    const authHeader = req.headers.authorization;
+
+    if (authHeader && authHeader.startsWith("Bearer")) {
+      token = authHeader.split(" ")[1];
+    }
+
+    // 🔥 2. Fallback to cookie (optional)
+    if (!token && req.cookies?.token) {
+      token = req.cookies.token;
+    }
+
+    // ❌ No token anywhere
     if (!token) {
       return res.status(401).json({ message: "Not authenticated" });
     }
 
     let decoded;
 
-    // 🔐 Verify JWT
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
-      // 🔥 Token expired / invalid → clear cookie
-      res.clearCookie("token", {
-        httpOnly: true,
-        sameSite: "None",
-        secure: false, // true in production (HTTPS)
-        path: "/",
-      });
+      console.error("JWT error:", err.message);
+
+      // 🔥 Clear cookie ONLY if cookie exists
+      if (req.cookies?.token) {
+        res.clearCookie("token", {
+          httpOnly: true,
+          sameSite: "None",
+          secure: process.env.NODE_ENV === "production",
+          path: "/",
+        });
+      }
 
       return res.status(401).json({
         message: "Session expired. Please login again.",
       });
     }
 
-    // 🔴 Token verified but no user id (extra safety)
+    // ❌ Invalid payload
     if (!decoded?.id) {
       return res.status(401).json({ message: "Invalid token payload" });
     }
 
-    // 👤 Fetch user (same shape for normal + Google login)
+    // 👤 Fetch user
     const userRes = await pool.query(
       "SELECT id, name, email FROM users WHERE id = $1",
       [decoded.id]
@@ -44,7 +59,7 @@ export const protect = async (req, res, next) => {
       return res.status(401).json({ message: "User no longer exists" });
     }
 
-    // ✅ Attach clean user to request
+    // ✅ Attach user
     req.user = userRes.rows[0];
 
     next();

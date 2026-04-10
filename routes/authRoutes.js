@@ -83,7 +83,7 @@ router.get(
         path: "/",
       });
 
-      return res.redirect(`${process.env.CLIENT_URL}/google-redirect`);
+      return res.redirect(`${process.env.CLIENT_URL}/google-redirect?token=${token}`);
     } catch (err) {
       console.error("💥 Google OAuth ERROR FULL:", err);
       return res.redirect(`${process.env.CLIENT_URL}/login`);
