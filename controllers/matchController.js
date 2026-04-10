@@ -1,23 +1,59 @@
 import pool from "../config/db.js";
 
 /* ======================================================
-   HELPER: FIND COMMON SLOT
+   HELPER: NORMALIZE DAY
+====================================================== */
+const normalizeDay = (day) => {
+  const map = {
+    sun: "sunday",
+    mon: "monday",
+    tue: "tuesday",
+    wed: "wednesday",
+    thu: "thursday",
+    fri: "friday",
+    sat: "saturday",
+  };
+
+  return map[day.toLowerCase().slice(0, 3)] || day.toLowerCase();
+};
+
+/* ======================================================
+   HELPER: TIME → MINUTES
+====================================================== */
+const toMinutes = (time) => {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+};
+
+const toTime = (mins) => {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+};
+
+/* ======================================================
+   HELPER: FIND COMMON SLOT (FIXED)
 ====================================================== */
 const findCommonSlot = (senderSlots, receiverSlots) => {
   for (let s of senderSlots) {
     for (let r of receiverSlots) {
-      const senderDay = s.day.toLowerCase().trim();
-      const receiverDay = r.day.toLowerCase().trim();
+      const senderDay = normalizeDay(s.day);
+      const receiverDay = normalizeDay(r.day);
 
       if (senderDay === receiverDay) {
-        const start = s.start_time > r.start_time ? s.start_time : r.start_time;
-        const end = s.end_time < r.end_time ? s.end_time : r.end_time;
+        const sStart = toMinutes(s.start_time);
+        const sEnd = toMinutes(s.end_time);
+        const rStart = toMinutes(r.start_time);
+        const rEnd = toMinutes(r.end_time);
+
+        const start = Math.max(sStart, rStart);
+        const end = Math.min(sEnd, rEnd);
 
         if (start < end) {
           return {
             day: senderDay,
-            start_time: start,
-            end_time: end
+            start_time: toTime(start),
+            end_time: toTime(end),
           };
         }
       }
@@ -27,7 +63,7 @@ const findCommonSlot = (senderSlots, receiverSlots) => {
 };
 
 /* ======================================================
-   HELPER: CONVERT DAY + TIME → REAL TIMESTAMP
+   HELPER: CONVERT DAY + TIME → TIMESTAMP
 ====================================================== */
 const getNextDateTime = (dayName, time) => {
   const days = [
@@ -36,7 +72,7 @@ const getNextDateTime = (dayName, time) => {
   ];
 
   const today = new Date();
-  const targetDay = days.indexOf(dayName.toLowerCase());
+  const targetDay = days.indexOf(normalizeDay(dayName));
   const currentDay = today.getDay();
 
   let diff = targetDay - currentDay;
@@ -45,8 +81,8 @@ const getNextDateTime = (dayName, time) => {
   const nextDate = new Date(today);
   nextDate.setDate(today.getDate() + diff);
 
-  const [hours, minutes, seconds] = time.split(":");
-  nextDate.setHours(hours, minutes, seconds || 0, 0);
+  const [hours, minutes] = time.split(":").map(Number);
+  nextDate.setHours(hours, minutes, 0, 0);
 
   return nextDate;
 };
@@ -106,6 +142,7 @@ export const sendMatchRequest = async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Match request sent",
+      slot: commonSlot
     });
 
   } catch (err) {
