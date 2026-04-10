@@ -38,7 +38,7 @@ router.get("/me", protect, (req, res) => {
 ========================================================= */
 
 /**
- * STEP 1: Redirect user to Google
+ * STEP 1: Redirect to Google
  */
 router.get(
   "/google",
@@ -67,23 +67,20 @@ router.get(
         return res.redirect(`${process.env.CLIENT_URL}/login`);
       }
 
-      const isProd = process.env.NODE_ENV === "production";
-
+      // 🔐 Generate JWT
       const token = jwt.sign(
         { id: req.user.id },
         process.env.JWT_SECRET,
         { expiresIn: "2d" }
       );
 
-      res.cookie("token", token, {
-        httpOnly: true,
-        sameSite: isProd ? "None" : "Lax",
-        secure: isProd,
-        domain: ".onrender.com",
-        path: "/",
-      });
+      // ❌ REMOVE COOKIE (no longer needed)
+      // cookies cause cross-domain issues, you already moved to token
 
-      return res.redirect(`${process.env.CLIENT_URL}/google-redirect?token=${token}`);
+      // ✅ Send token via URL
+      return res.redirect(
+        `${process.env.CLIENT_URL}/google-redirect?token=${token}`
+      );
     } catch (err) {
       console.error("💥 Google OAuth ERROR FULL:", err);
       return res.redirect(`${process.env.CLIENT_URL}/login`);
