@@ -17,33 +17,10 @@ const app = express();
 app.set("trust proxy", 1);
 
 /* ================= CORS ================= */
-const allowedOrigins = [
-  "http://localhost:3000",
-  "https://skillswap-client-yv4s.vercel.app",
-  "https://skillswap-client-yr53.vercel.app",
-];
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-
-    if (
-      allowedOrigins.includes(origin) ||
-      origin.includes("vercel.app")
-    ) {
-      return callback(null, origin); // ✅ IMPORTANT
-    }
-
-    console.log("❌ Blocked by CORS:", origin);
-    return callback(new Error("Not allowed by CORS"));
-  },
+app.use(cors({
+  origin: "https://skillswap-client-yv4s.vercel.app",
   credentials: true,
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-};
-
-app.use(cors(corsOptions));
-
+}));
 
 /* ================= MIDDLEWARE ================= */
 app.use(cookieParser());
