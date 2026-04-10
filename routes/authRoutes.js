@@ -79,6 +79,7 @@ router.get(
         httpOnly: true,
         sameSite: isProd ? "None" : "Lax",
         secure: isProd,
+        domain: ".onrender.com",
         path: "/",
       });
 
