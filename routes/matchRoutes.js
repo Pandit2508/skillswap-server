@@ -166,7 +166,21 @@ router.get("/incoming", protect, async (req, res) => {
       [userId]
     );
 
-    res.json(result.rows);
+    const requests = result.rows.map((row) => ({
+      requestId: row.request_id,
+      created_at: row.created_at,
+      sender: {
+        id: row.sender_id,
+        name: row.name,
+        bio: row.bio || "",
+        location: row.location || "",
+        experience: row.experience || "",
+        avatar_url: row.avatar_url || null,
+      },
+    }));
+
+    res.status(200).json(requests);
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch requests" });
