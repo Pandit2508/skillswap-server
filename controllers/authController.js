@@ -9,12 +9,11 @@ const generateToken = (userId, expiresIn = process.env.JWT_EXPIRES_IN || "3d") =
 };
 
 /* ================= COOKIE CONFIG ================= */
-// 🔥 FORCE correct config for cross-site (Vercel ↔ Render)
 const cookieOptions = {
   httpOnly: true,
-  secure: true,          // REQUIRED for HTTPS (Render)
-  sameSite: "None",      // REQUIRED for cross-site cookies
-  path: "/",             // IMPORTANT
+  secure: true,
+  sameSite: "None",
+  path: "/",
   maxAge: 3 * 24 * 60 * 60 * 1000,
 };
 
@@ -42,7 +41,6 @@ export const signup = async (req, res) => {
     const user = newUserRes.rows[0];
     const token = generateToken(user.id);
 
-    // 🔥 SET COOKIE
     res.cookie("token", token, cookieOptions);
 
     return res.status(201).json({
@@ -84,9 +82,8 @@ export const login = async (req, res) => {
       email: user.email,
     };
 
-    // 🔥 SET COOKIE
     res.cookie("token", token, cookieOptions);
-    console.log("Protocol:", req.protocol);
+
     return res.status(200).json({
       message: "Login successful",
       user: cleanUser,
@@ -97,9 +94,45 @@ export const login = async (req, res) => {
   }
 };
 
+/* ================= GET CURRENT USER (FIXED) ================= */
+export const getMe = async (req, res) => {
+  try {
+    const token = req.cookies?.token;
+
+    // 🔥 Fix: no token → don't crash
+    if (!token) {
+      return res.status(401).json({ error: "No token provided" });
+    }
+
+    let decoded;
+
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+
+    const userRes = await pool.query(
+      "SELECT id, name, email FROM users WHERE id = $1",
+      [decoded.id]
+    );
+
+    if (!userRes.rows.length) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    return res.status(200).json({
+      user: userRes.rows[0],
+    });
+
+  } catch (err) {
+    console.error("getMe error:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+};
+
 /* ================= LOGOUT ================= */
 export const logout = (req, res) => {
-  // 🔥 MUST match cookie options exactly
   res.clearCookie("token", {
     httpOnly: true,
     secure: true,
