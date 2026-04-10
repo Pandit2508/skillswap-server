@@ -78,12 +78,9 @@ const getNextDateForDay = (dayName) => {
 
 /* ================= SEND MATCH REQUEST ================= */
 
-router.post("/:receiverId?", protect, async (req, res) => {
+router.post("/:receiverId", protect, async (req, res) => {
   const senderId = req.user.id;
-
-  // 🔥 Support BOTH param + body
-  const receiverId =
-    req.params.receiverId || req.body.receiver_id;
+  const { receiverId } = req.params;
 
   if (!receiverId) {
     return res.status(400).json({ error: "receiverId is required" });
@@ -93,6 +90,7 @@ router.post("/:receiverId?", protect, async (req, res) => {
     return res.status(400).json({ error: "You cannot send a request to yourself" });
   }
 
+  
   try {
     /* DUPLICATE CHECK */
     const existing = await pool.query(
