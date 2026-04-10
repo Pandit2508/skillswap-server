@@ -87,18 +87,20 @@ CLIENT_URL=https://skillswap-client-yv4s.vercel.app
 4. Run the server
 npm start
 
+
 ⚠️ Notes
 Uses PostgreSQL as the primary database
 Authentication is handled via HTTP-only cookies
 Ensure proper CORS configuration for frontend communication
 Backend is deployed on Render
+
 💡 Future Improvements
 Real-time chat (WebSockets)
 Notification system
 Advanced recommendation engine
 Rate limiting & security enhancements
-👨‍💻 Author
 
+👨‍💻 Author
 Naman Pandit
 GitHub: https://github.com/Pandit2508
 
@@ -106,4 +108,3 @@ GitHub: https://github.com/Pandit2508
 
 This project is licensed under the MIT License.
 
-### Example Meeting Link
