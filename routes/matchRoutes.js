@@ -119,9 +119,10 @@ router.post("/:receiverId", protect, async (req, res) => {
       receiverAvailability.rows
     );
     
-    console.log("Sender:", senderAvailability.rows);
-console.log("Receiver:", receiverAvailability.rows);
+   
     if (!commonSlot) {
+       console.log("Sender:", senderAvailability.rows);
+console.log("Receiver:", receiverAvailability.rows);
       return res.status(400).json({
         error: "No overlapping time slot found"
       });
