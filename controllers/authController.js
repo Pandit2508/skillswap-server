@@ -8,12 +8,13 @@ const generateToken = (userId, expiresIn = process.env.JWT_EXPIRES_IN || "3d") =
   return jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn });
 };
 
-const isProduction = process.env.NODE_ENV === "production";
-
+/* ================= COOKIE CONFIG ================= */
+// 🔥 FORCE correct config for cross-site (Vercel ↔ Render)
 const cookieOptions = {
   httpOnly: true,
-  sameSite: isProduction ? "None" : "Lax",
-  secure: isProduction, // ✅ true on Render
+  secure: true,          // REQUIRED for HTTPS (Render)
+  sameSite: "None",      // REQUIRED for cross-site cookies
+  path: "/",             // IMPORTANT
   maxAge: 3 * 24 * 60 * 60 * 1000,
 };
 
@@ -41,16 +42,16 @@ export const signup = async (req, res) => {
     const user = newUserRes.rows[0];
     const token = generateToken(user.id);
 
-    // ✅ SET COOKIE
+    // 🔥 SET COOKIE
     res.cookie("token", token, cookieOptions);
 
-    res.status(201).json({
+    return res.status(201).json({
       message: "Signup successful",
       user,
     });
   } catch (err) {
     console.error("Signup error:", err);
-    res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: "Server error" });
   }
 };
 
@@ -76,34 +77,39 @@ export const login = async (req, res) => {
     }
 
     const token = generateToken(user.id);
+
     const cleanUser = {
       id: user.id,
       name: user.name,
       email: user.email,
     };
 
-    // ✅ SET COOKIE (THIS FIXES THE LOOP)
+    // 🔥 SET COOKIE
     res.cookie("token", token, cookieOptions);
 
-    res.status(200).json({
+    return res.status(200).json({
       message: "Login successful",
       user: cleanUser,
     });
   } catch (err) {
     console.error("Login error:", err);
-    res.status(500).json({ error: "Server error" });
+    return res.status(500).json({ error: "Server error" });
   }
 };
 
 /* ================= LOGOUT ================= */
 export const logout = (req, res) => {
+  // 🔥 MUST match cookie options exactly
   res.clearCookie("token", {
-  httpOnly: true,
-  sameSite: isProduction ? "None" : "Lax",
-  secure: isProduction,
-});
+    httpOnly: true,
+    secure: true,
+    sameSite: "None",
+    path: "/",
+  });
 
-  res.status(200).json({ message: "Logged out successfully" });
+  return res.status(200).json({
+    message: "Logged out successfully",
+  });
 };
 
 /* ================= FORGOT PASSWORD ================= */
@@ -137,10 +143,12 @@ export const forgotPassword = async (req, res) => {
       `,
     });
 
-    res.status(200).json({ message: "Reset email sent successfully" });
+    return res.status(200).json({
+      message: "Reset email sent successfully",
+    });
   } catch (error) {
     console.error("Forgot password error:", error);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };
 
@@ -158,9 +166,11 @@ export const resetPassword = async (req, res) => {
       [hashedPassword, decoded.id]
     );
 
-    res.status(200).json({ message: "Password reset successful" });
+    return res.status(200).json({
+      message: "Password reset successful",
+    });
   } catch (err) {
     console.error("Reset password error:", err);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 };

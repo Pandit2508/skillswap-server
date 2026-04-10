@@ -3,22 +3,22 @@ import pool from "../config/db.js";
 
 export const protect = async (req, res, next) => {
   try {
-    let token;
+    let token = null;
 
-    // 🔥 1. Check Authorization header (PRIMARY)
-    const authHeader = req.headers.authorization;
-
-    if (authHeader && authHeader.startsWith("Bearer")) {
-      token = authHeader.split(" ")[1];
-    }
-
-    // 🔥 2. Fallback to cookie (optional)
-    if (!token && req.cookies?.token) {
+    // 🔥 COOKIE FIRST (your system is cookie-based now)
+    if (req.cookies?.token) {
       token = req.cookies.token;
     }
 
-    // ❌ No token anywhere
+    // 🔥 Optional fallback (only if you REALLY still want it)
+    const authHeader = req.headers.authorization;
+    if (!token && authHeader && authHeader.startsWith("Bearer")) {
+      token = authHeader.split(" ")[1];
+    }
+
+    // ❌ No token
     if (!token) {
+      console.log("❌ No token found");
       return res.status(401).json({ message: "Not authenticated" });
     }
 
@@ -27,25 +27,24 @@ export const protect = async (req, res, next) => {
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET);
     } catch (err) {
-      console.error("JWT error:", err.message);
+      console.error("❌ JWT error:", err.message);
 
-      // 🔥 Clear cookie ONLY if cookie exists
-      if (req.cookies?.token) {
-        res.clearCookie("token", {
-          httpOnly: true,
-          sameSite: "None",
-          secure: process.env.NODE_ENV === "production",
-          path: "/",
-        });
-      }
+      // 🔥 CLEAR COOKIE PROPERLY (must match config)
+      res.clearCookie("token", {
+        httpOnly: true,
+        secure: true,
+        sameSite: "None",
+        path: "/",
+        domain: ".onrender.com", // 🔥 IMPORTANT
+      });
 
       return res.status(401).json({
         message: "Session expired. Please login again.",
       });
     }
 
-    // ❌ Invalid payload
     if (!decoded?.id) {
+      console.log("❌ Invalid token payload");
       return res.status(401).json({ message: "Invalid token payload" });
     }
 
@@ -56,15 +55,18 @@ export const protect = async (req, res, next) => {
     );
 
     if (userRes.rows.length === 0) {
+      console.log("❌ User not found");
       return res.status(401).json({ message: "User no longer exists" });
     }
 
     // ✅ Attach user
     req.user = userRes.rows[0];
 
+    console.log("✅ Authenticated user:", req.user.id);
+
     next();
   } catch (err) {
-    console.error("Auth middleware error:", err);
+    console.error("🔥 Auth middleware error:", err);
     return res.status(401).json({ message: "Authentication failed" });
   }
 };
