@@ -15,11 +15,24 @@ const cookieOptions = {
   sameSite: "None",
   path: "/",
   maxAge: 3 * 24 * 60 * 60 * 1000,
+  ...(process.env.COOKIE_DOMAIN ? { domain: process.env.COOKIE_DOMAIN } : {}),
 };
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /* ================= SIGNUP ================= */
 export const signup = async (req, res) => {
   const { name, email, password } = req.body;
+
+  if (!name || !email || !password) {
+    return res.status(400).json({ message: "Name, email, and password are required" });
+  }
+  if (!EMAIL_REGEX.test(email)) {
+    return res.status(400).json({ message: "Please provide a valid email address" });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ message: "Password must be at least 8 characters" });
+  }
 
   try {
     const existingUser = await pool.query(
@@ -56,6 +69,10 @@ export const signup = async (req, res) => {
 /* ================= LOGIN ================= */
 export const login = async (req, res) => {
   const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: "Email and password are required" });
+  }
 
   try {
     const result = await pool.query(
@@ -146,8 +163,19 @@ export const logout = (req, res) => {
 };
 
 /* ================= FORGOT PASSWORD ================= */
+// Always returns the same generic response regardless of whether the
+// email exists, so this endpoint can't be used to enumerate registered
+// accounts. The email is only actually sent if a matching user is found.
 export const forgotPassword = async (req, res) => {
   const { email } = req.body;
+
+  const genericResponse = {
+    message: "If an account with that email exists, a reset link has been sent.",
+  };
+
+  if (!email) {
+    return res.status(200).json(genericResponse);
+  }
 
   try {
     const userRes = await pool.query(
@@ -155,30 +183,26 @@ export const forgotPassword = async (req, res) => {
       [email]
     );
 
-    if (userRes.rows.length === 0) {
-      return res.status(404).json({ message: "User not found" });
+    if (userRes.rows.length > 0) {
+      const user = userRes.rows[0];
+      const token = generateToken(user.id, "15m");
+      const resetLink = `${process.env.CLIENT_URL}/reset-password/${token}`;
+
+      await transporter.sendMail({
+        from: `"SkillSwap Support" <${process.env.EMAIL_USER}>`,
+        to: user.email,
+        subject: "Reset Your SkillSwap Password",
+        html: `
+          <p>Hi ${user.name},</p>
+          <p>Click below to reset your password:</p>
+          <a href="${resetLink}">Reset Password</a>
+          <p>This link expires in 15 minutes.</p>
+        `,
+      });
     }
 
-    const user = userRes.rows[0];
-    const token = generateToken(user.id, "15m");
-
-    const resetLink = `${process.env.CLIENT_URL}/reset-password/${token}`;
-
-    await transporter.sendMail({
-      from: `"SkillSwap Support" <${process.env.EMAIL_USER}>`,
-      to: user.email,
-      subject: "Reset Your SkillSwap Password",
-      html: `
-        <p>Hi ${user.name},</p>
-        <p>Click below to reset your password:</p>
-        <a href="${resetLink}">Reset Password</a>
-        <p>This link expires in 15 minutes.</p>
-      `,
-    });
-
-    return res.status(200).json({
-      message: "Reset email sent successfully",
-    });
+    // Same response whether or not the user existed.
+    return res.status(200).json(genericResponse);
   } catch (error) {
     console.error("Forgot password error:", error);
     return res.status(500).json({ message: "Server error" });

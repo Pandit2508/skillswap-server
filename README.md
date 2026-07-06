@@ -68,37 +68,52 @@ https://meet.jit.si/skillswap-{requestId}-{timestamp}
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/your-username/skillswap-backend.git
-cd skillswap-backend
+git clone https://github.com/Pandit2508/skillswap-server.git
+cd skillswap-server
+```
 
-2. Install dependencies
-
+### 2. Install dependencies
+```bash
 npm install
+```
 
-Configure environment variables
+### 3. Configure environment variables
+Copy `.env.example` to `.env` and fill in your own values:
+```bash
+cp .env.example .env
+```
 
-3. Create a .env file:
+### 4. Set up the database
+Run the schema against your PostgreSQL instance:
+```bash
+psql "$DATABASE_URL" -f schema.sql
+```
 
-PORT=5000
-DATABASE_URL=your_postgresql_connection_string
-JWT_SECRET=your_secret_key
-CLIENT_URL=https://skillswap-client-yv4s.vercel.app
+### 5. Run the server
+```bash
+npm start        # production
+npm run dev      # with nodemon (auto-restart)
+```
 
-4. Run the server
-npm start
+### 6. Run tests
+```bash
+npm test
+```
 
+---
 
 ⚠️ Notes
-Uses PostgreSQL as the primary database
-Authentication is handled via HTTP-only cookies
-Ensure proper CORS configuration for frontend communication
-Backend is deployed on Render
+- Uses PostgreSQL as the primary database (see `schema.sql` for the full table structure)
+- Authentication is handled via HTTP-only cookies + JWT
+- Auth endpoints (`/signup`, `/login`, `/forgot-password`, `/reset-password`) are rate-limited to guard against brute-force attempts
+- Ensure proper CORS configuration for frontend communication
+- Backend is deployed on Render
 
 💡 Future Improvements
-Real-time chat (WebSockets)
-Notification system
-Advanced recommendation engine
-Rate limiting & security enhancements
+- Real-time chat (WebSockets)
+- Notification system
+- Advanced recommendation engine
+- CI pipeline (GitHub Actions) running `npm test` on push
 
 👨‍💻 Author
 Naman Pandit

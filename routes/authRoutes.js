@@ -1,6 +1,7 @@
 import express from "express";
 import passport from "passport";
 import jwt from "jsonwebtoken";
+import rateLimit from "express-rate-limit";
 import {
   signup,
   login,
@@ -13,14 +14,28 @@ import { protect } from "../middleware/authMiddleware.js";
 const router = express.Router();
 
 /* =========================================================
+   RATE LIMITING
+   Auth endpoints are the highest-value brute-force targets,
+   so they get a stricter limit than the rest of the API.
+========================================================= */
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many attempts. Please try again later." },
+});
+
+/* =========================================================
    REGULAR AUTH
 ========================================================= */
 
-router.post("/signup", signup);
-router.post("/login", login);
+router.post("/signup", authLimiter, signup);
+router.post("/login", authLimiter, login);
 router.post("/logout", logout);
-router.post("/forgot-password", forgotPassword);
-router.post("/reset-password/:token", resetPassword);
+router.post("/forgot-password", authLimiter, forgotPassword);
+router.post("/reset-password/:token", authLimiter, resetPassword);
 
 /* =========================================================
    AUTH CHECK
@@ -58,31 +73,24 @@ router.get(
     session: false,
   }),
   (req, res) => {
-    console.log("🔥 GOOGLE CALLBACK HIT");
-    console.log("USER:", req.user);
-
     try {
       if (!req.user) {
-        console.log("❌ No user from Google");
         return res.redirect(`${process.env.CLIENT_URL}/login`);
       }
 
-      // 🔐 Generate JWT
       const token = jwt.sign(
         { id: req.user.id },
         process.env.JWT_SECRET,
         { expiresIn: "2d" }
       );
 
-      // ❌ REMOVE COOKIE (no longer needed)
-      // cookies cause cross-domain issues, you already moved to token
-
-      // ✅ Send token via URL
+      // Token is passed via URL (not a cookie) since this is a
+      // cross-domain redirect from Google back to the client.
       return res.redirect(
         `${process.env.CLIENT_URL}/google-redirect?token=${token}`
       );
     } catch (err) {
-      console.error("💥 Google OAuth ERROR FULL:", err);
+      console.error("Google OAuth error:", err);
       return res.redirect(`${process.env.CLIENT_URL}/login`);
     }
   }

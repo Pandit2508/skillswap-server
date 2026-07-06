@@ -1,80 +1,9 @@
 import express from "express";
 import pool from "../config/db.js";
 import { protect } from "../middleware/authMiddleware.js";
+import { findCommonSlot, getNextDateForDay } from "../utils/matching.js";
 
 const router = express.Router();
-
-/* ================= HELPERS ================= */
-
-const normalizeDay = (day) => {
-  const map = {
-    sun: "sunday",
-    mon: "monday",
-    tue: "tuesday",
-    wed: "wednesday",
-    thu: "thursday",
-    fri: "friday",
-    sat: "saturday",
-  };
-  return map[day.toLowerCase().slice(0, 3)] || day.toLowerCase();
-};
-
-const toMinutes = (time) => {
-  const [h, m] = time.split(":").map(Number);
-  return h * 60 + m;
-};
-
-const toTime = (mins) => {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-};
-
-const findCommonSlot = (senderSlots, receiverSlots) => {
-  for (let s of senderSlots) {
-    for (let r of receiverSlots) {
-      const senderDay = normalizeDay(s.day);
-      const receiverDay = normalizeDay(r.day);
-
-      if (senderDay === receiverDay) {
-        const sStart = toMinutes(s.start_time);
-        const sEnd = toMinutes(s.end_time);
-        const rStart = toMinutes(r.start_time);
-        const rEnd = toMinutes(r.end_time);
-
-        const start = Math.max(sStart, rStart);
-        const end = Math.min(sEnd, rEnd);
-
-        if (start < end) {
-          return {
-            day: senderDay,
-            start_time: toTime(start),
-            end_time: toTime(end),
-          };
-        }
-      }
-    }
-  }
-  return null;
-};
-
-const getNextDateForDay = (dayName) => {
-  const days = [
-    "sunday","monday","tuesday","wednesday",
-    "thursday","friday","saturday"
-  ];
-
-  const today = new Date();
-  const targetDay = days.indexOf(normalizeDay(dayName));
-
-  let diff = targetDay - today.getDay();
-  if (diff < 0) diff += 7;
-
-  const nextDate = new Date(today);
-  nextDate.setDate(today.getDate() + diff);
-
-  return nextDate.toISOString().split("T")[0];
-};
 
 /* ================= SEND MATCH REQUEST ================= */
 
@@ -90,7 +19,6 @@ router.post("/:receiverId", protect, async (req, res) => {
     return res.status(400).json({ error: "You cannot send a request to yourself" });
   }
 
-  
   try {
     /* DUPLICATE CHECK */
     const existing = await pool.query(
@@ -114,15 +42,10 @@ router.post("/:receiverId", protect, async (req, res) => {
       [receiverId]
     );
 
-    console.log("Sender:", senderAvailability.rows);
-console.log("Receiver:", receiverAvailability.rows);
-
-const commonSlot = findCommonSlot(
-  senderAvailability.rows,
-  receiverAvailability.rows
-);
-
-console.log("COMMON SLOT:", commonSlot);
+    const commonSlot = findCommonSlot(
+      senderAvailability.rows,
+      receiverAvailability.rows
+    );
 
     if (!commonSlot) {
       return res.status(400).json({
@@ -144,7 +67,7 @@ console.log("COMMON SLOT:", commonSlot);
     });
 
   } catch (err) {
-    console.error("❌ Send request error:", err);
+    console.error("Send request error:", err);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -182,7 +105,7 @@ router.get("/incoming", protect, async (req, res) => {
     res.status(200).json(requests);
 
   } catch (err) {
-    console.error(err);
+    console.error("Incoming requests error:", err);
     res.status(500).json({ error: "Failed to fetch requests" });
   }
 });
@@ -254,7 +177,7 @@ router.post("/:id/accept", protect, async (req, res) => {
     res.json({ success: true, meetingLink, slot: commonSlot });
 
   } catch (err) {
-    console.error(err);
+    console.error("Accept request error:", err);
     res.status(500).json({ error: "Failed to accept request" });
   }
 });
@@ -279,7 +202,7 @@ router.post("/:id/reject", protect, async (req, res) => {
     res.json({ success: true });
 
   } catch (err) {
-    console.error(err);
+    console.error("Reject request error:", err);
     res.status(500).json({ error: "Failed to reject request" });
   }
 });
