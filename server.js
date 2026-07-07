@@ -14,11 +14,16 @@ import bookingRoutes from "./routes/bookingRoutes.js";
 dotenv.config();
 
 const app = express();
-app.set("trust proxy", true);
+app.set("trust proxy", 1);
 
 /* ================= CORS ================= */
+const allowedOrigins = [
+  "https://skillswap-client-ij83.vercel.app",
+  "https://skillswap-client-yv4s.vercel.app"
+];
+
 app.use(cors({
-  origin: "https://skillswap-client-yv4s.vercel.app",
+  origin: allowedOrigins,
   credentials: true,
 }));
 
