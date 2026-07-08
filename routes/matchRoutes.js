@@ -60,6 +60,22 @@ router.post("/:receiverId", protect, async (req, res) => {
       [senderId, receiverId]
     );
 
+    // Notify the receiver in real time if they're connected.
+    const io = req.app.get("io");
+    if (io) {
+      const senderRes = await pool.query(
+        `SELECT id, name, avatar_url FROM users WHERE id = $1`,
+        [senderId]
+      );
+
+      io.to(`user_${receiverId}`).emit("new_match_request", {
+        requestId: result.rows[0].id,
+        slot: commonSlot,
+        sender: senderRes.rows[0],
+        created_at: result.rows[0].created_at,
+      });
+    }
+
     res.status(201).json({
       success: true,
       request: result.rows[0],
@@ -173,6 +189,15 @@ router.post("/:id/accept", protect, async (req, res) => {
       `UPDATE match_requests SET status = 'accepted' WHERE id = $1`,
       [requestId]
     );
+
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`user_${request.sender_id}`).emit("match_request_accepted", {
+        requestId,
+        meetingLink,
+        slot: commonSlot,
+      });
+    }
 
     res.json({ success: true, meetingLink, slot: commonSlot });
 

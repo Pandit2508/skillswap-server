@@ -100,20 +100,28 @@ npm run dev      # with nodemon (auto-restart)
 npm test
 ```
 
+### 7. (Optional) Seed sample data & run benchmarks
+Useful for local development or generating real performance numbers:
+```bash
+node scripts/seed.js 150        # seeds 150 fake users, skills, and availability
+node scripts/benchmark.js       # measures index impact + matching throughput
+```
+
 ---
 
 ⚠️ Notes
 - Uses PostgreSQL as the primary database (see `schema.sql` for the full table structure)
 - Authentication is handled via HTTP-only cookies + JWT
 - Auth endpoints (`/signup`, `/login`, `/forgot-password`, `/reset-password`) are rate-limited to guard against brute-force attempts
+- Real-time match-request notifications are delivered via Socket.io, authenticated using the same auth cookie
+- Post-session ratings are handled via `/api/reviews` — a review can only be left after a booking's `end_time` has passed
 - Ensure proper CORS configuration for frontend communication
 - Backend is deployed on Render
 
 💡 Future Improvements
-- Real-time chat (WebSockets)
-- Notification system
-- Advanced recommendation engine
+- Weighted match scoring (skill relevance + rating + slot size) instead of first-overlap-wins
 - CI pipeline (GitHub Actions) running `npm test` on push
+- Integration tests for auth/booking flows with a disposable test database
 
 👨‍💻 Author
 Naman Pandit

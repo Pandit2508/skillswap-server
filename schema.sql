@@ -68,6 +68,21 @@ CREATE TABLE IF NOT EXISTS bookings (
     created_at    TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- Post-session ratings. A review can only be left once per booking per
+-- reviewer, and only after the session's end_time has passed (enforced
+-- in application code, not here, since "now" isn't a static constraint).
+CREATE TABLE IF NOT EXISTS reviews (
+    id          SERIAL PRIMARY KEY,
+    booking_id  INTEGER NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+    reviewer_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reviewee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    rating      SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment     TEXT,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    UNIQUE (booking_id, reviewer_id),
+    CHECK (reviewer_id <> reviewee_id)
+);
+
 -- Helpful indexes for the lookups the app actually performs
 CREATE INDEX IF NOT EXISTS idx_skill_offers_user   ON skill_offers(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_skills_user     ON user_skills(user_id);
@@ -76,3 +91,5 @@ CREATE INDEX IF NOT EXISTS idx_match_requests_recv  ON match_requests(receiver_i
 CREATE INDEX IF NOT EXISTS idx_match_requests_send  ON match_requests(sender_id, status);
 CREATE INDEX IF NOT EXISTS idx_bookings_user1       ON bookings(user1_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_user2       ON bookings(user2_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_reviewee     ON reviews(reviewee_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_booking      ON reviews(booking_id);
