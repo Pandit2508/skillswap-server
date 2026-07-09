@@ -26,13 +26,16 @@ const percentile = (sortedArr, p) => {
 };
 
 const timeQuery = async (client, userId) => {
-  const start = process.hrtime.bigint();
-  await client.query(
-    `SELECT day, start_time, end_time FROM availability WHERE user_id = $1`,
+  // EXPLAIN ANALYZE reports Postgres's own server-side execution time,
+  // isolated from network round-trip time to the client. This is the
+  // number that actually reflects the index's effect — round-trip
+  // latency to a remote DB (e.g. Render) would otherwise swamp it.
+  const res = await client.query(
+    `EXPLAIN (ANALYZE, FORMAT JSON)
+     SELECT day, start_time, end_time FROM availability WHERE user_id = $1`,
     [userId]
   );
-  const end = process.hrtime.bigint();
-  return Number(end - start) / 1_000_000; // ms
+  return res.rows[0]["QUERY PLAN"][0]["Execution Time"]; // ms
 };
 
 async function run() {
@@ -51,12 +54,16 @@ async function run() {
       return;
     }
 
-    console.log(`Benchmarking against ${userIds.length} seeded users.\n`);
+    console.log(`Benchmarking against ${userIds.length} seeded users.`);
+    console.log(
+      "(Times below are Postgres server-side execution time via EXPLAIN ANALYZE — " +
+      "network round-trip time is excluded so the index effect isn't masked by it.)\n"
+    );
 
     /* =========================================================
        1. INDEX vs NO INDEX
     ========================================================= */
-    console.log("=== Availability query: WITH index ===");
+    console.log("=== Availability query execution time: WITH index ===");
     const withIndexTimes = [];
     for (let i = 0; i < ITERATIONS; i++) {
       const uid = userIds[i % userIds.length];
@@ -71,7 +78,7 @@ async function run() {
     console.log("Dropping idx_availability_user to measure the unindexed cost...");
     await client.query(`DROP INDEX IF EXISTS idx_availability_user`);
 
-    console.log("=== Availability query: WITHOUT index ===");
+    console.log("=== Availability query execution time: WITHOUT index ===");
     const noIndexTimes = [];
     for (let i = 0; i < ITERATIONS; i++) {
       const uid = userIds[i % userIds.length];
@@ -137,11 +144,19 @@ async function run() {
 
     console.log("=== Summary (safe to quote) ===");
     console.log(
-      `Indexed availability lookups run ~${speedup.toFixed(1)}x faster ` +
-      `(p95 ${percentile(withIndexTimes, 95).toFixed(2)}ms vs ${percentile(noIndexTimes, 95).toFixed(2)}ms unindexed) ` +
-      `across a ${userIds.length}-user seeded dataset. The matching algorithm evaluated ` +
+      `Indexed availability lookups run ~${speedup.toFixed(1)}x faster on the database server ` +
+      `(p95 execution time ${percentile(withIndexTimes, 95).toFixed(3)}ms vs ${percentile(noIndexTimes, 95).toFixed(3)}ms unindexed, ` +
+      `measured via EXPLAIN ANALYZE) across a ${userIds.length}-user seeded dataset. The matching algorithm evaluated ` +
       `${pairsChecked} user pairs in ${algoMs.toFixed(1)}ms, finding ${matchCount} valid overlapping slots.`
     );
+    if (speedup < 1.5) {
+      console.log(
+        "\nNote: with only a few hundred rows in `availability`, Postgres's query planner may " +
+        "reasonably choose a sequential scan over the index either way — the table is small enough " +
+        "that it doesn't matter yet. Re-run after seeding a much larger dataset " +
+        "(try `node scripts/seed.js 5000`) to see the index's effect at a size where it actually changes the query plan."
+      );
+    }
   } finally {
     client.release();
     await pool.end();
