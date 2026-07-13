@@ -2,8 +2,121 @@ import express from "express";
 import pool from "../config/db.js";
 import { protect } from "../middleware/authMiddleware.js";
 import { findCommonSlot, getNextDateForDay } from "../utils/matching.js";
+import { scoreCandidate } from "../utils/scoring.js";
 
 const router = express.Router();
+
+/* ================= SUGGESTED MATCHES ================= */
+router.get("/suggestions", protect, async (req, res) => {
+  const userId = req.user.id;
+  const limit = Math.min(Number(req.query.limit) || 10, 50);
+
+  try {
+    const meRes = await pool.query(
+      `SELECT
+        array_agg(DISTINCT so.name) FILTER (WHERE so.name IS NOT NULL) AS skills,
+        array_agg(DISTINCT sw.name) FILTER (WHERE sw.name IS NOT NULL) AS skills_wanted,
+        json_agg(DISTINCT jsonb_build_object('day', a.day, 'start_time', a.start_time, 'end_time', a.end_time))
+          FILTER (WHERE a.day IS NOT NULL) AS availability
+       FROM users u
+       LEFT JOIN skill_offers sk ON sk.user_id = u.id
+       LEFT JOIN skills so ON so.id = sk.offered_skill
+       LEFT JOIN user_skills usk ON usk.user_id = u.id
+       LEFT JOIN skills sw ON sw.id = usk.skill_id
+       LEFT JOIN availability a ON a.user_id = u.id
+       WHERE u.id = $1
+       GROUP BY u.id`,
+      [userId]
+    );
+
+    if (!meRes.rows.length) {
+      return res.status(404).json({ error: "Complete your profile first" });
+    }
+
+    const me = {
+      skills: meRes.rows[0].skills || [],
+      skills_wanted: meRes.rows[0].skills_wanted || [],
+      availability: meRes.rows[0].availability || [],
+    };
+
+    if (!me.availability.length) {
+      return res.status(400).json({
+        error: "Add your availability to your profile to get match suggestions",
+      });
+    }
+
+    const candidatesRes = await pool.query(
+      `SELECT
+        u.id, u.name, u.avatar_url, u.location, u.experience,
+        array_agg(DISTINCT so.name) FILTER (WHERE so.name IS NOT NULL) AS skills,
+        array_agg(DISTINCT sw.name) FILTER (WHERE sw.name IS NOT NULL) AS skills_wanted,
+        json_agg(DISTINCT jsonb_build_object('day', a.day, 'start_time', a.start_time, 'end_time', a.end_time))
+          FILTER (WHERE a.day IS NOT NULL) AS availability,
+        COALESCE(rv.average_rating, 0) AS average_rating,
+        COALESCE(rv.review_count, 0)::int AS review_count
+       FROM users u
+       LEFT JOIN skill_offers sk ON sk.user_id = u.id
+       LEFT JOIN skills so ON so.id = sk.offered_skill
+       LEFT JOIN user_skills usk ON usk.user_id = u.id
+       LEFT JOIN skills sw ON sw.id = usk.skill_id
+       LEFT JOIN availability a ON a.user_id = u.id
+       LEFT JOIN (
+         SELECT reviewee_id, AVG(rating)::numeric AS average_rating, COUNT(*) AS review_count
+         FROM reviews GROUP BY reviewee_id
+       ) rv ON rv.reviewee_id = u.id
+       WHERE u.id <> $1
+       GROUP BY u.id, rv.average_rating, rv.review_count`,
+      [userId]
+    );
+
+    const existingRes = await pool.query(
+      `SELECT sender_id, receiver_id FROM match_requests
+       WHERE (sender_id = $1 OR receiver_id = $1) AND status IN ('pending', 'accepted')`,
+      [userId]
+    );
+    const alreadyConnected = new Set(
+      existingRes.rows.map((r) => (r.sender_id === userId ? r.receiver_id : r.sender_id))
+    );
+
+    const suggestions = candidatesRes.rows
+      .filter((c) => !alreadyConnected.has(c.id))
+      .map((c) => {
+        const result = scoreCandidate(me, {
+          skills: c.skills || [],
+          skills_wanted: c.skills_wanted || [],
+          availability: c.availability || [],
+          average_rating: c.average_rating,
+        });
+
+        if (!result) return null;
+
+        return {
+          user: {
+            id: c.id,
+            name: c.name,
+            avatar_url: c.avatar_url,
+            location: c.location || "",
+            experience: c.experience || "",
+            skills: c.skills || [],
+            skills_wanted: c.skills_wanted || [],
+            average_rating: Number(c.average_rating) || null,
+            review_count: c.review_count,
+          },
+          score: result.score,
+          breakdown: result.breakdown,
+          bestSlot: result.bestSlot,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+
+    res.json(suggestions);
+  } catch (err) {
+    console.error("Suggestions error:", err);
+    res.status(500).json({ error: "Failed to compute match suggestions" });
+  }
+});
 
 /* ================= SEND MATCH REQUEST ================= */
 

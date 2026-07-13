@@ -14,6 +14,7 @@ import matchRoutes from "./routes/matchRoutes.js";
 import profileRoutes from "./routes/profileRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
+import messageRoutes from "./routes/messageRoutes.js";
 
 dotenv.config();
 
@@ -45,6 +46,7 @@ app.use("/api/match-requests", matchRoutes);
 app.use("/api/profile", profileRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/messages", messageRoutes);
 
 /* ================= TEST ROUTE ================= */
 app.get("/", (req, res) => {
@@ -90,6 +92,20 @@ io.use((socket, next) => {
 
 io.on("connection", (socket) => {
   socket.join(`user_${socket.userId}`);
+
+  // Typing indicator for chat: purely ephemeral, never persisted.
+  // The client sends { to: otherUserId } and we relay to that user's
+  // room, tagged with who's typing, so no DB/route round-trip is
+  // needed for something this transient.
+  socket.on("typing", ({ to } = {}) => {
+    if (!to) return;
+    socket.to(`user_${to}`).emit("typing", { from: socket.userId });
+  });
+
+  socket.on("stop_typing", ({ to } = {}) => {
+    if (!to) return;
+    socket.to(`user_${to}`).emit("stop_typing", { from: socket.userId });
+  });
 
   socket.on("disconnect", () => {
     // no-op: room membership is cleaned up automatically

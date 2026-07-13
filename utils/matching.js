@@ -38,10 +38,15 @@ export const toTime = (mins) => {
 };
 
 /**
- * Finds the first overlapping availability window between two sets of
- * weekly slots. Returns null if no day/time overlap exists.
+ * Finds every overlapping availability window between two sets of
+ * weekly slots (all day/time combinations), each annotated with its
+ * duration in minutes. Used by findCommonSlot to pick the best one,
+ * and exposed separately so callers that want the full option set
+ * (e.g. match scoring) don't have to re-derive it.
  */
-export const findCommonSlot = (senderSlots = [], receiverSlots = []) => {
+export const findAllOverlaps = (senderSlots = [], receiverSlots = []) => {
+  const overlaps = [];
+
   for (const s of senderSlots) {
     for (const r of receiverSlots) {
       const senderDay = normalizeDay(s.day);
@@ -57,16 +62,45 @@ export const findCommonSlot = (senderSlots = [], receiverSlots = []) => {
         const end = Math.min(sEnd, rEnd);
 
         if (start < end) {
-          return {
+          overlaps.push({
             day: senderDay,
             start_time: toTime(start),
             end_time: toTime(end),
-          };
+            duration_minutes: end - start,
+          });
         }
       }
     }
   }
-  return null;
+
+  return overlaps;
+};
+
+/**
+ * Finds the best overlapping availability window between two sets of
+ * weekly slots. "Best" means the longest shared window — a bigger
+ * window gives more breathing room for the session, rather than
+ * whichever slot happened to be compared first. Ties are broken by
+ * day order (Sunday..Saturday) then by earliest start time, so the
+ * result is deterministic given the same inputs.
+ *
+ * Returns null if no day/time overlap exists at all.
+ */
+export const findCommonSlot = (senderSlots = [], receiverSlots = []) => {
+  const overlaps = findAllOverlaps(senderSlots, receiverSlots);
+  if (!overlaps.length) return null;
+
+  overlaps.sort((a, b) => {
+    if (b.duration_minutes !== a.duration_minutes) {
+      return b.duration_minutes - a.duration_minutes;
+    }
+    const dayDiff = DAYS_OF_WEEK.indexOf(a.day) - DAYS_OF_WEEK.indexOf(b.day);
+    if (dayDiff !== 0) return dayDiff;
+    return toMinutes(a.start_time) - toMinutes(b.start_time);
+  });
+
+  const { day, start_time, end_time } = overlaps[0];
+  return { day, start_time, end_time };
 };
 
 /**

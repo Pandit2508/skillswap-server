@@ -3,6 +3,7 @@ import {
   toMinutes,
   toTime,
   findCommonSlot,
+  findAllOverlaps,
   getNextDateForDay,
 } from "../utils/matching.js";
 
@@ -79,6 +80,69 @@ describe("findCommonSlot", () => {
   test("returns null for empty availability lists", () => {
     expect(findCommonSlot([], [])).toBeNull();
     expect(findCommonSlot([{ day: "mon", start_time: "09:00", end_time: "10:00" }], [])).toBeNull();
+  });
+
+  test("picks the largest overlap, not the first one found", () => {
+    const sender = [
+      // Compared first, but only a 30-minute overlap.
+      { day: "mon", start_time: "09:00", end_time: "09:30" },
+      // Compared second, but a full 2-hour overlap.
+      { day: "wed", start_time: "10:00", end_time: "13:00" },
+    ];
+    const receiver = [
+      { day: "mon", start_time: "09:15", end_time: "10:00" },
+      { day: "wed", start_time: "11:00", end_time: "13:00" },
+    ];
+
+    expect(findCommonSlot(sender, receiver)).toEqual({
+      day: "wednesday",
+      start_time: "11:00",
+      end_time: "13:00",
+    });
+  });
+
+  test("breaks ties deterministically by day order then start time", () => {
+    const sender = [
+      { day: "wed", start_time: "09:00", end_time: "10:00" }, // 1hr
+      { day: "mon", start_time: "09:00", end_time: "10:00" }, // 1hr, earlier day
+    ];
+    const receiver = [
+      { day: "wed", start_time: "09:00", end_time: "10:00" },
+      { day: "mon", start_time: "09:00", end_time: "10:00" },
+    ];
+
+    // Both overlaps are exactly 1 hour; Monday should win the tie.
+    expect(findCommonSlot(sender, receiver)).toEqual({
+      day: "monday",
+      start_time: "09:00",
+      end_time: "10:00",
+    });
+  });
+});
+
+describe("findAllOverlaps", () => {
+  test("returns every overlapping window with its duration", () => {
+    const sender = [
+      { day: "mon", start_time: "09:00", end_time: "09:30" },
+      { day: "wed", start_time: "10:00", end_time: "13:00" },
+    ];
+    const receiver = [
+      { day: "mon", start_time: "09:15", end_time: "10:00" },
+      { day: "wed", start_time: "11:00", end_time: "13:00" },
+    ];
+
+    const overlaps = findAllOverlaps(sender, receiver);
+    expect(overlaps).toHaveLength(2);
+    expect(overlaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ day: "monday", duration_minutes: 15 }),
+        expect.objectContaining({ day: "wednesday", duration_minutes: 120 }),
+      ])
+    );
+  });
+
+  test("returns an empty array when nothing overlaps", () => {
+    expect(findAllOverlaps([], [])).toEqual([]);
   });
 });
 

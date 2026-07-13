@@ -83,6 +83,21 @@ CREATE TABLE IF NOT EXISTS reviews (
     CHECK (reviewer_id <> reviewee_id)
 );
 
+-- Direct messages between two users. Chat is only allowed between users
+-- who have an accepted match request (enforced in application code), so
+-- there's no separate "conversation" table — a conversation is just the
+-- set of messages between two user ids.
+CREATE TABLE IF NOT EXISTS messages (
+    id           SERIAL PRIMARY KEY,
+    sender_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    receiver_id  INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content      TEXT NOT NULL,
+    read_at      TIMESTAMP,
+    created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+    CHECK (sender_id <> receiver_id),
+    CHECK (length(content) > 0 AND length(content) <= 2000)
+);
+
 -- Helpful indexes for the lookups the app actually performs
 CREATE INDEX IF NOT EXISTS idx_skill_offers_user   ON skill_offers(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_skills_user     ON user_skills(user_id);
@@ -93,3 +108,10 @@ CREATE INDEX IF NOT EXISTS idx_bookings_user1       ON bookings(user1_id);
 CREATE INDEX IF NOT EXISTS idx_bookings_user2       ON bookings(user2_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_reviewee     ON reviews(reviewee_id);
 CREATE INDEX IF NOT EXISTS idx_reviews_booking      ON reviews(booking_id);
+
+-- Messages are always fetched as "the thread between me and them,
+-- ordered by time", so index both directions plus a time-ordering
+-- covering index for the most common access pattern.
+CREATE INDEX IF NOT EXISTS idx_messages_sender      ON messages(sender_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_receiver     ON messages(receiver_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_thread       ON messages(LEAST(sender_id, receiver_id), GREATEST(sender_id, receiver_id), created_at);
