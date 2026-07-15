@@ -14,11 +14,9 @@ Built using **Node.js, Express, and PostgreSQL**, the backend powers all core pl
 - 🧩 Skills offered and skills wanted  
 - 📅 Multiple availability slots per user  
 - 🤝 Send and receive match requests  
-- ⚖️ Weighted match suggestions (skill reciprocity + rating + shared availability)  
-- ⏱️ Overlap-based availability matching (longest shared window, not first-found)  
+- ⏱️ Overlap-based availability matching  
 - 📆 Automatic meeting scheduling  
 - 🎥 Video call link generation  
-- 💬 Real-time in-app chat between matched users  
 - 🔌 REST APIs for frontend integration  
 
 ---
@@ -120,21 +118,10 @@ node scripts/benchmark.js       # measures index impact + matching throughput
 - Ensure proper CORS configuration for frontend communication
 - Backend is deployed on Render
 
-### 💬 Chat
-- `GET /api/messages/conversations` — list conversations (one per accepted match), with last message + unread count
-- `GET /api/messages/:userId` — full thread with that user, marks their messages to you as read
-- `POST /api/messages/:userId` — send a message; only allowed between users with an **accepted** match request
-- Delivered live over the same authenticated Socket.io connection as match-request notifications (`new_message` event); typing indicators via `typing` / `stop_typing`
-
-### ⚖️ Weighted match suggestions
-- `GET /api/match-requests/suggestions?limit=10` — ranks other users by a weighted score (`utils/scoring.js`):
-  skill reciprocity (do you two actually have something to teach *each other*, not just one-way) × 0.5, average rating × 0.2, size of your best shared availability window × 0.3
-- Replaces the old "first overlap wins" scheduling with **largest overlap wins** in `findCommonSlot` (`utils/matching.js`) — used both here and when sending/accepting a request
-
 💡 Future Improvements
+- Weighted match scoring (skill relevance + rating + slot size) instead of first-overlap-wins
 - CI pipeline (GitHub Actions) running `npm test` on push
-- Integration tests for auth/booking/chat flows with a disposable test database
-- Message pagination for very long threads (currently loads the full history at once)
+- Integration tests for auth/booking flows with a disposable test database
 
 👨‍💻 Author
 Naman Pandit

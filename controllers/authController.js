@@ -1,7 +1,7 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import pool from "../config/db.js";
-import transporter from "../utils/emailTransporter.js";
+import { sendMail } from "../utils/emailTransporter.js";
 
 /* ================= HELPERS ================= */
 const generateToken = (userId, expiresIn = process.env.JWT_EXPIRES_IN || "3d") => {
@@ -188,17 +188,23 @@ export const forgotPassword = async (req, res) => {
       const token = generateToken(user.id, "15m");
       const resetLink = `${process.env.CLIENT_URL}/reset-password/${token}`;
 
-      await transporter.sendMail({
-        from: `"SkillSwap Support" <${process.env.EMAIL_USER}>`,
-        to: user.email,
-        subject: "Reset Your SkillSwap Password",
-        html: `
-          <p>Hi ${user.name},</p>
-          <p>Click below to reset your password:</p>
-          <a href="${resetLink}">Reset Password</a>
-          <p>This link expires in 15 minutes.</p>
-        `,
-      });
+      // Isolated on purpose: a send failure here must not change the
+      // response returned below, or the status code itself would leak
+      // whether this email exists (defeats the point of genericResponse).
+      try {
+        await sendMail({
+          to: user.email,
+          subject: "Reset Your SkillSwap Password",
+          html: `
+            <p>Hi ${user.name},</p>
+            <p>Click below to reset your password:</p>
+            <a href="${resetLink}">Reset Password</a>
+            <p>This link expires in 15 minutes.</p>
+          `,
+        });
+      } catch (sendError) {
+        console.error("Forgot password - email send failed:", sendError);
+      }
     }
 
     // Same response whether or not the user existed.
