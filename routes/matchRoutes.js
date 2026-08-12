@@ -239,30 +239,71 @@ router.get("/incoming", protect, async (req, res) => {
   }
 });
 
-/* ================= ACCEPT ================= */
+/* =========================================================
+   ACCEPT
+   Race-condition-free version:
+
+   1. BEGIN a transaction and SELECT ... FOR UPDATE the match_request
+      row. This blocks any concurrent accept/reject on the SAME request
+      until the first transaction commits or rolls back -- so a
+      double-click / retry can no longer both pass the "is this still
+      pending?" check (fixes race #1: same request accepted twice).
+
+   2. The status check (`AND status = 'pending'`) is re-verified INSIDE
+      the locked transaction, not just at the top -- the lock only
+      blocks concurrent writers, it doesn't change what the row said
+      before the lock was acquired, so we still have to look.
+
+   3. Insert into `booking_participants` (one row per person) in the
+      SAME transaction as the `bookings` insert. The EXCLUDE constraint
+      on that table (see migration 002) is the actual guarantee against
+      race #2 (overlapping slot booked for the same user via two
+      *different* requests) -- it works even across transactions that
+      never lock the same row, because Postgres enforces it at commit
+      time for any conflicting insert, no matter which request path
+      created it.
+
+   4. If the EXCLUDE constraint fires, Postgres raises SQLSTATE 23P01
+      (exclusion_violation). We catch that specifically and return a
+      clean 409 instead of a generic 500, and roll back so the
+      match_request stays 'pending' (nothing was silently half-applied).
+========================================================= */
 
 router.post("/:id/accept", protect, async (req, res) => {
   const userId = req.user.id;
   const requestId = req.params.id;
 
+  const client = await pool.connect();
+
   try {
-    const requestRes = await pool.query(
-      `SELECT * FROM match_requests WHERE id = $1 AND receiver_id = $2`,
+    await client.query("BEGIN");
+
+    // Lock this specific match_request row so a concurrent accept/reject
+    // on the same id has to wait for us to finish (or fail) first.
+    const requestRes = await client.query(
+      `SELECT * FROM match_requests
+       WHERE id = $1 AND receiver_id = $2 AND status = 'pending'
+       FOR UPDATE`,
       [requestId, userId]
     );
 
     if (!requestRes.rows.length) {
-      return res.status(404).json({ error: "Request not found" });
+      await client.query("ROLLBACK");
+      // Covers: wrong receiver, doesn't exist, OR already
+      // accepted/rejected by a request that beat us to the lock.
+      return res.status(409).json({
+        error: "This request is no longer pending (already handled, or not found)",
+      });
     }
 
     const request = requestRes.rows[0];
 
-    const senderAvailability = await pool.query(
+    const senderAvailability = await client.query(
       `SELECT day, start_time, end_time FROM availability WHERE user_id = $1`,
       [request.sender_id]
     );
 
-    const receiverAvailability = await pool.query(
+    const receiverAvailability = await client.query(
       `SELECT day, start_time, end_time FROM availability WHERE user_id = $1`,
       [request.receiver_id]
     );
@@ -273,35 +314,43 @@ router.post("/:id/accept", protect, async (req, res) => {
     );
 
     if (!commonSlot) {
-      return res.status(400).json({
-        error: "No overlapping time slot found"
-      });
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "No overlapping time slot found" });
     }
 
     const meetingDate = getNextDateForDay(commonSlot.day);
-
     const sessionTime = `${meetingDate} ${commonSlot.start_time}`;
     const endTime = `${meetingDate} ${commonSlot.end_time}`;
-
     const meetingLink = `https://meet.jit.si/skillswap-${requestId}-${Date.now()}`;
 
-    await pool.query(
-      `INSERT INTO bookings 
+    const bookingRes = await client.query(
+      `INSERT INTO bookings
        (user1_id, user2_id, session_time, end_time, meeting_link, status)
-       VALUES ($1, $2, $3, $4, $5, 'scheduled')`,
-      [
-        request.sender_id,
-        request.receiver_id,
-        sessionTime,
-        endTime,
-        meetingLink
-      ]
+       VALUES ($1, $2, $3, $4, $5, 'scheduled')
+       RETURNING id`,
+      [request.sender_id, request.receiver_id, sessionTime, endTime, meetingLink]
+    );
+    const bookingId = bookingRes.rows[0].id;
+
+    // One row per participant -- this is what the exclusion constraint
+    // in migration 002 actually checks against. If either person
+    // already has an overlapping booking (from a different, unrelated
+    // request that raced us), this throws 23P01 and we roll everything
+    // back below.
+    await client.query(
+      `INSERT INTO booking_participants (booking_id, user_id, slot)
+       VALUES
+         ($1, $2, tstzrange($3::timestamp, $4::timestamp, '[)')),
+         ($1, $5, tstzrange($3::timestamp, $4::timestamp, '[)'))`,
+      [bookingId, request.sender_id, sessionTime, endTime, request.receiver_id]
     );
 
-    await pool.query(
+    await client.query(
       `UPDATE match_requests SET status = 'accepted' WHERE id = $1`,
       [requestId]
     );
+
+    await client.query("COMMIT");
 
     const io = req.app.get("io");
     if (io) {
@@ -312,11 +361,26 @@ router.post("/:id/accept", protect, async (req, res) => {
       });
     }
 
-    res.json({ success: true, meetingLink, slot: commonSlot });
+    return res.json({ success: true, meetingLink, slot: commonSlot });
 
   } catch (err) {
+    await client.query("ROLLBACK");
+
+    // Postgres exclusion_violation -- one of the two participants
+    // already has an overlapping booking from a different request that
+    // committed first. This is the DB-level guarantee catching what a
+    // race between two *different* match_requests could otherwise slip
+    // past the row lock above (which only protects THIS request's row).
+    if (err.code === "23P01") {
+      return res.status(409).json({
+        error: "One of you already has a session booked that overlaps this time slot",
+      });
+    }
+
     console.error("Accept request error:", err);
-    res.status(500).json({ error: "Failed to accept request" });
+    return res.status(500).json({ error: "Failed to accept request" });
+  } finally {
+    client.release();
   }
 });
 
@@ -329,12 +393,14 @@ router.post("/:id/reject", protect, async (req, res) => {
   try {
     const result = await pool.query(
       `UPDATE match_requests SET status = 'rejected'
-       WHERE id = $1 AND receiver_id = $2 RETURNING *`,
+       WHERE id = $1 AND receiver_id = $2 AND status = 'pending' RETURNING *`,
       [requestId, userId]
     );
 
     if (!result.rows.length) {
-      return res.status(404).json({ error: "Request not found" });
+      return res.status(409).json({
+        error: "This request is no longer pending (already handled, or not found)",
+      });
     }
 
     res.json({ success: true });
